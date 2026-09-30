@@ -1,0 +1,87 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum EmailStatus {
+  PENDING
+  PROCESSING
+  SENT
+  FAILED
+}
+
+model Sender {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String?
+  avatar    String?
+  googleId  String?  @unique
+  role      String   @default("USER")
+  ownerId   String?
+  isDefault Boolean  @default(false)
+  emails    Email[]
+  slackConnection SlackConnection?
+  owner     Sender?  @relation("SenderOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  senders   Sender[] @relation("SenderOwner")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([email])
+  @@index([ownerId])
+}
+
+model SlackConnection {
+  id                  String   @id @default(uuid())
+  senderId            String   @unique
+  sender              Sender   @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  teamId              String
+  teamName            String?
+  channelId           String?
+  encryptedAccessToken String  @db.Text
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model Email {
+  id                       String      @id @default(uuid())
+  to                       String
+  subject                  String
+  body                     String      @db.Text
+  scheduledAt              DateTime
+  sentAt                   DateTime?
+  status                   EmailStatus @default(PENDING)
+  senderId                 String
+  sender                   Sender      @relation(fields: [senderId], references: [id], onDelete: Restrict)
+  jobId                    String?
+  failureReason            String?     @db.Text
+  retryCount               Int         @default(0)
+  rateLimitRescheduleCount Int         @default(0)
+  delayBetweenEmails       Int         @default(2000)
+  hourlyLimit              Int         @default(200)
+  attachments              Attachment[]
+  createdAt                DateTime    @default(now())
+  updatedAt                DateTime    @updatedAt
+
+  @@index([senderId, status])
+  @@index([status, scheduledAt])
+  @@index([jobId])
+  @@index([sentAt])
+  @@index([createdAt])
+}
+
+model Attachment {
+  id          String   @id @default(uuid())
+  emailId     String
+  email       Email    @relation(fields: [emailId], references: [id], onDelete: Cascade)
+  filename    String
+  mimeType    String
+  size        Int
+  storageKey  String
+  createdAt   DateTime @default(now())
+
+  @@index([emailId])
+}

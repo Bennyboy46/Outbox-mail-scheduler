@@ -1,0 +1,24 @@
+{
+  "name": "outbox-reachinbox-scheduler",
+  "version": "1.0.0",
+  "description": "Outbox Labs / ReachInbox Email Scheduling Service & Dashboard",
+  "scripts": {
+    "dev:backend": "npm --prefix backend run dev",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "build:backend": "npm --prefix backend run build",
+    "build:frontend": "npm --prefix frontend run build",
+    "start:backend": "npm --prefix backend start",
+    "start:worker": "npm --prefix backend run start:worker",
+    "migrate:deploy": "npm --prefix backend run migrate:deploy",
+    "test:backend": "npm --prefix backend test"
+  },
+  "keywords": [
+    "bullmq",
+    "email-scheduler",
+    "redis",
+    "reachinbox",
+    "outbox"
+  ],
+  "author": "",
+  "license": "ISC"
+}
