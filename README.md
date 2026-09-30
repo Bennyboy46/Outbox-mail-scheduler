@@ -37,7 +37,7 @@ SMTP delivery
 ↓
 Database status update to SENT / FAILED
 
-## Required services
+## Local development services
 
 - PostgreSQL on localhost:5433
 - Redis on localhost:6379
@@ -72,7 +72,8 @@ cd backend
 npm run worker
 ```
 
-For a production-style run after building:
+For a production-style run, build and apply migrations once, then run each
+long-lived process as its own service (the start commands do not return):
 
 ```bash
 npm run migrate:deploy
@@ -80,14 +81,14 @@ npm run build:backend
 npm run build:frontend
 npm run start:backend
 npm run start:worker
-cd frontend
-npm start
 ```
+
+Start the frontend separately with `npm start` from `frontend/`.
 
 Run the API and worker as separate long-running processes. Provide production
 environment variables through the hosting platform rather than committing `.env`
-files. The API, worker, PostgreSQL, Redis, SMTP provider, and Elasticsearch must
-be reachable from their respective processes before accepting traffic.
+files. PostgreSQL, Redis, and SMTP must be reachable from the processes that use
+them. Elasticsearch is optional and must only be reachable when enabled.
 
 Reindex existing PostgreSQL emails into Elasticsearch:
 
@@ -120,22 +121,102 @@ Use the examples in:
 - [backend/.env.example](backend/.env.example)
 - [frontend/.env.example](frontend/.env.example)
 
-Required values include:
+Core backend values include:
 
 - `DATABASE_URL`
 - `REDIS_URL`
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`
-- `NEXTAUTH_URL`, `NEXTAUTH_SECRET`
-- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_CLIENT_ID`
 - `ADMIN_EMAILS` (comma-separated verified Google emails allowed to access Bull Board)
-- `SLACK_CLIENT_ID`, `SLACK_CLIENT_SECRET`, `SLACK_REDIRECT_URI`
-- `SLACK_SUCCESS_REDIRECT`, `SLACK_TOKEN_ENCRYPTION_KEY`
-- `ELASTICSEARCH_URL`, `ELASTICSEARCH_API_KEY`, `ELASTICSEARCH_INDEX`
-- `DEFAULT_EMAIL_DELAY_MS`, `DEFAULT_HOURLY_LIMIT`, `WORKER_CONCURRENCY`
+- `CLIENT_ORIGIN`
+
+The worker requires `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`,
+`SMTP_SECURE`, and `SMTP_FROM`. The frontend requires `NEXTAUTH_URL`,
+`NEXTAUTH_SECRET`, `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, and
+`NEXT_PUBLIC_API_URL`. Slack variables are needed only when Slack is enabled;
+Elasticsearch variables are optional.
 
 For production, replace all localhost URLs and development credentials, set
 `NODE_ENV=production`, use a strong `NEXTAUTH_SECRET`, and configure a public
 `NEXTAUTH_URL`, `CLIENT_ORIGIN`, and `SLACK_REDIRECT_URI`.
+
+## Deployment Preparation
+
+No cloud services or credentials are provisioned by this repository. The current
+deployment dependency map is:
+
+```text
+Frontend -> Backend -> PostgreSQL (Neon)
+Backend -> Redis (BullMQ queue)       Worker -> same Redis
+Worker -> PostgreSQL and Ethereal SMTP
+Backend -> Slack (optional OAuth/notifications)
+Backend -> Elasticsearch (optional search/indexing)
+```
+
+### Services and Process Commands
+
+- PostgreSQL: Neon. Use its direct connection URL as `DATABASE_URL`; this project
+	currently uses one database URL for runtime and migrations.
+- Redis: a managed Redis service compatible with BullMQ. Set the same `REDIS_URL`
+	on the backend and worker.
+- Backend: build with `npm run build` and start with `npm start` from `backend/`.
+- Worker: build with `npm run build` and start with `npm run start:worker` from
+	`backend/`. Run it as a separate continuous service, not a scheduled job.
+- Frontend: build with `npm run build` and start with `npm start` from `frontend/`;
+	Vercel can run the existing Next.js app from that directory.
+- Migration release step: from `backend/`, run `npx prisma migrate deploy` after
+	setting production `DATABASE_URL`. Do not use `prisma db push` in production.
+
+Configure backend and worker environment variables from
+[`backend/.env.example`](backend/.env.example). At minimum, backend requires
+`DATABASE_URL`, `REDIS_URL`, `GOOGLE_CLIENT_ID`, `CLIENT_ORIGIN`, and `ADMIN_EMAILS`.
+The worker additionally requires `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`,
+`SMTP_PASS`, `SMTP_SECURE`, `SMTP_FROM`, and `SLACK_TOKEN_ENCRYPTION_KEY` when Slack
+connections/rate-limit notifications are enabled. Set `ATTACHMENT_STORAGE_DIR` to
+a persistent shared volume if attachments are used. `ELASTICSEARCH_URL`,
+`ELASTICSEARCH_API_KEY`, and `ELASTICSEARCH_INDEX` are optional.
+
+Configure the frontend from [`frontend/.env.example`](frontend/.env.example):
+`NEXTAUTH_URL` is the public frontend URL, `NEXTAUTH_SECRET` must be a strong
+private value, `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` are the Google OAuth
+credentials, and `NEXT_PUBLIC_API_URL` is the public backend URL ending in `/api`.
+The Google client ID must match the backend's `GOOGLE_CLIENT_ID`.
+
+### OAuth URLs
+
+For Google OAuth, register the frontend origin as an authorized JavaScript origin
+and add this exact NextAuth redirect URI:
+
+```text
+https://<frontend-domain>/api/auth/callback/google
+```
+
+For Slack, set `SLACK_REDIRECT_URI` to:
+
+```text
+https://<backend-domain>/api/slack/callback
+```
+
+Set `SLACK_SUCCESS_REDIRECT` to `https://<frontend-domain>/dashboard`. Keep
+`SLACK_TOKEN_ENCRYPTION_KEY` private and stable; it must be a 32-byte hex key.
+
+### Demo Limitations and Post-Deploy Checks
+
+- Ethereal is a test mailbox, not a production delivery provider. The current
+	environment's SMTP settings are not copied into deployment configuration. No
+	hosting provider has been selected, so outbound TCP access to Ethereal on port
+	587 cannot be verified here; check the chosen provider's policy and test from
+	its deployed worker before relying on it.
+- Attachments are stored on the local filesystem. Ephemeral or separate backend/
+	worker filesystems are not safe for attachment delivery. Demonstrate without
+	attachments unless both services share durable storage mounted at the same
+	`ATTACHMENT_STORAGE_DIR`. Moving to object storage would require changing the
+	upload and worker retrieval paths.
+- Elasticsearch is optional. Leaving `ELASTICSEARCH_URL` unset does not stop
+	scheduling or sending; search is unavailable until Elasticsearch is configured.
+- After configuration, verify `/api/health`, Google login and authenticated API
+	access, a scheduled test email and Ethereal preview, the worker queue, Slack if
+	enabled, and admin-only access to `/api/admin/queues`. Do not treat a successful
+	API response as proof of SMTP delivery.
 
 ## Scheduling behavior
 

@@ -9,6 +9,9 @@ export const getMailerTransport = async (): Promise<Transporter> => {
 
   const smtpHost = process.env.SMTP_HOST || 'smtp.ethereal.email';
   const smtpPort = Number(process.env.SMTP_PORT || 587);
+  const secure = process.env.SMTP_SECURE === undefined
+    ? smtpPort === 465
+    : process.env.SMTP_SECURE.toLowerCase() === 'true';
   const smtpUser = process.env.SMTP_USER?.trim();
   const smtpPass = process.env.SMTP_PASS?.trim();
 
@@ -16,7 +19,7 @@ export const getMailerTransport = async (): Promise<Transporter> => {
     cachedTransporter = nodemailer.createTransport({
       host: smtpHost,
       port: smtpPort,
-      secure: smtpPort === 465,
+      secure,
       auth: {
         user: smtpUser,
         pass: smtpPass,
@@ -30,7 +33,7 @@ export const getMailerTransport = async (): Promise<Transporter> => {
   cachedTransporter = nodemailer.createTransport({
     host: smtpHost,
     port: smtpPort,
-    secure: smtpPort === 465,
+    secure,
     auth: {
       user: account.user,
       pass: account.pass,

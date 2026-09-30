@@ -1,6 +1,6 @@
+import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
-import dotenv from 'dotenv';
 import prisma from './config/db';
 import emailRoutes from './routes/emailRoutes';
 import { createBullBoard } from '@bull-board/api';
@@ -10,8 +10,6 @@ import { emailQueue } from './services/emailQueue';
 import { requireAdmin } from './middleware/auth';
 import slackRoutes from './routes/slackRoutes';
 import senderRoutes from './routes/senderRoutes';
-
-dotenv.config();
 
 const app = express();
 const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN || 'http://localhost:3000';
